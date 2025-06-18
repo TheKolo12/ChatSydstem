@@ -1,7 +1,7 @@
 ﻿using Exiled.API.Interfaces;
 using System.ComponentModel;
 
-namespace BubbleChat
+namespace ChatSystem
 {
     public class Config : IConfig
     {

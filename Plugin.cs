@@ -1,18 +1,18 @@
 ﻿using System;
-using BubbleChat;
+using ChatSystem;
 using Exiled.API.Features;
 using Exiled.API.Interfaces;
 
-namespace ProximityChat
+namespace ChatSystem
 {
-    public class ProximityChat : Plugin<Config>
+    public class ChatSystem : Plugin<Config>
     {
-        public override string Author => "ByLeTalhaWw";
-        public override string Name => "ProximityChat";
-        public override Version Version => new Version(1, 0, 0);
-        public override string Prefix => "ProximityChat";
+        public override string Author => "ByLeTalhaWw & TheKolo12";
+        public override string Name => "ChatSystem";
+        public override Version Version => new Version(1, 0, 1);
+        public override string Prefix => "ChatSystem";
 
-        public static ProximityChat Instance { get; private set; }
+        public static ChatSystem Instance { get; private set; }
 
         private EventHandlers eventHandlers;
 
@@ -21,10 +21,8 @@ namespace ProximityChat
             Instance = this;
             eventHandlers = new EventHandlers();
 
-            // Player join eventi
             Exiled.Events.Handlers.Player.Verified += eventHandlers.OnPlayerVerified;
 
-            Log.Debug("ProximityChat plugin has been enabled!");
             base.OnEnabled();
         }
 
@@ -37,7 +35,6 @@ namespace ProximityChat
             }
 
             Instance = null;
-            Log.Debug("ProximityChat plugin has been disabled!");
             base.OnDisabled();
         }
     }

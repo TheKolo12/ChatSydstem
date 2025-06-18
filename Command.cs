@@ -9,8 +9,9 @@ using UnityEngine;
 using Mirror;
 using AdminToys;
 using System.Reflection;
+using ChatSystem;
 
-namespace BubbleChat
+namespace ChatSystem
 {
     [CommandHandler(typeof(ClientCommandHandler))]
     public class ChatCommand : ICommand
@@ -44,8 +45,13 @@ namespace BubbleChat
                     return false;
                 }
 
-                var config = GetBubbleChatConfig();
-                int maxLength = config?.MaxMessageLength ?? 50;
+                if (player.IsMuted)
+                {
+                    response = "You cant use this command, you are muted!";
+                    return false;
+                }
+
+                int maxLength = ChatSystem.Instance.Config.MaxMessageLength;
 
                 if (arguments.Count == 0)
                 {
@@ -135,36 +141,25 @@ namespace BubbleChat
         {
             try
             {
-                var config = GetBubbleChatConfig();
 
-                float chatRange = config?.ChatRange ?? 15f;
-                float textVisibilityRange = config?.TextVisibilityRange ?? 8f;
-                string messageFormat = config?.MessageFormat ?? "{0}";
-                string messageColor = config?.MessageColor ?? "#FFFFFF";
-                float messageDuration = config?.MessageDuration ?? 5f;
-                bool debug = config?.Debug ?? true;
-
-                string formattedMessage = string.Format(messageFormat, message);
+                string formattedMessage = string.Format(ChatSystem.Instance.Config.MessageFormat, message);
 
                 // Players within chat range
                 var nearbyPlayers = Player.List.Where(p =>
                     p != null &&
                     p.IsAlive &&
-                    Vector3.Distance(sender.Position, p.Position) <= chatRange
+                    Vector3.Distance(sender.Position, p.Position) <= ChatSystem.Instance.Config.ChatRange
                 ).ToList();
 
                 var textViewers = Player.List.Where(p =>
                     p != null &&
                     p.IsAlive &&
-                    Vector3.Distance(sender.Position, p.Position) <= textVisibilityRange
+                    Vector3.Distance(sender.Position, p.Position) <= ChatSystem.Instance.Config.TextVisibilityRange
                 ).ToList();
 
-                Create3DTextDisplay(sender, formattedMessage, textViewers, messageColor, messageDuration);
+                Create3DTextDisplay(sender, formattedMessage, textViewers, ChatSystem.Instance.Config.MessageColor, ChatSystem.Instance.Config.MessageDuration);
 
-                if (debug)
-                {
-                    Log.Debug($"{sender.Nickname} proximity chat: '{message}' ({message.Length} characters, {nearbyPlayers.Count} players heard, {textViewers.Count} players see text)");
-                }
+                Log.Debug($"{sender.Nickname} proximity chat: '{message}' ({message.Length} characters, {nearbyPlayers.Count} players heard, {textViewers.Count} players see text)");
 
                 return nearbyPlayers.Count;
             }
@@ -179,16 +174,12 @@ namespace BubbleChat
         {
             try
             {
-                var config = GetBubbleChatConfig();
-                string chatPrefixColor = config?.ChatPrefixColor ?? "#00FF00";
-                float heightOffset = config?.HeightOffset ?? 0.9f;
-
-                string fullText = $"<color={chatPrefixColor}><size=1>CHAT:</size></color><color={messageColor}><size=1>{message}</size></color>";
+                string fullText = $"<color={ChatSystem.Instance.Config.ChatPrefixColor}><size=1>CHAT:</size></color><color={messageColor}><size=1>{message}</size></color>";
 
                 activeMessages[sender] = fullText;
                 messageColors[sender] = messageColor;
 
-                Vector3 initialPosition = sender.Position + Vector3.up * heightOffset;
+                Vector3 initialPosition = sender.Position + Vector3.up * ChatSystem.Instance.Config.HeightOffset;
                 CreateTextAtPosition(sender, initialPosition);
 
                 trackingCoroutines[sender] = Timing.RunCoroutine(TrackPlayerWithVisibilityControl(sender, duration));
@@ -229,9 +220,7 @@ namespace BubbleChat
 
                 if (activeMessages.ContainsKey(sender))
                 {
-                    var config = GetBubbleChatConfig();
-                    float textSize = config?.TextSize ?? 1.0f;
-                    SetTextToyProperties(adminToyBase, activeMessages[sender], activeMessages[sender], textSize);
+                    SetTextToyProperties(adminToyBase, activeMessages[sender], activeMessages[sender], ChatSystem.Instance.Config.TextSize);
                 }
 
                 NetworkServer.Spawn(adminToyBase.gameObject);
@@ -253,11 +242,6 @@ namespace BubbleChat
 
             while (elapsed < duration && sender != null && sender.IsAlive)
             {
-                var config = GetBubbleChatConfig();
-                float heightOffset = config?.HeightOffset ?? 0.9f;
-                bool enableBobbing = config?.EnableBobbing ?? true;
-                float bobbingIntensity = config?.BobbingIntensity ?? 0.005f;
-
                 Vector3 currentPosition = sender.Position;
                 Vector3 currentDirection = GetPlayerLookDirection(sender);
 
@@ -266,9 +250,9 @@ namespace BubbleChat
 
                 if (positionChanged || directionChanged || elapsed % 0.1f < 0.03f)
                 {
-                    Vector3 basePosition = currentPosition + Vector3.up * heightOffset;
+                    Vector3 basePosition = currentPosition + Vector3.up * ChatSystem.Instance.Config.HeightOffset;
 
-                    float bobOffset = enableBobbing ? Mathf.Sin(elapsed * 1.2f) * bobbingIntensity : 0f;
+                    float bobOffset = ChatSystem.Instance.Config.EnableBobbing ? Mathf.Sin(elapsed * 1.2f) * ChatSystem.Instance.Config.BobbingIntensity : 0f;
                     Vector3 finalTextPosition = basePosition + Vector3.up * bobOffset;
 
                     CreateTextAtPosition(sender, finalTextPosition);
@@ -311,8 +295,6 @@ namespace BubbleChat
             {
                 if (textToy == null || textOwner == null) return;
 
-                var config = GetBubbleChatConfig();
-                float textVisibilityRange = config?.TextVisibilityRange ?? 8f;
 
                 foreach (var player in Player.List)
                 {
@@ -320,7 +302,7 @@ namespace BubbleChat
 
                     float distance = Vector3.Distance(player.Position, textOwner.Position);
 
-                    if (distance <= textVisibilityRange)
+                    if (distance <= ChatSystem.Instance.Config.TextVisibilityRange)
                     {
                         ShowTextToPlayer(textToy, player);
                     }
@@ -499,36 +481,6 @@ namespace BubbleChat
             {
                 Log.Error($"SetTextToyProperties error: {ex}");
             }
-        }
-
-        private BubbleChat.Config GetBubbleChatConfig()
-        {
-            try
-            {
-                var plugins = Exiled.Loader.Loader.Plugins;
-
-                foreach (var plugin in plugins)
-                {
-                    if (plugin.GetType().Namespace == "BubbleChat")
-                    {
-                        var configProperty = plugin.GetType().GetProperty("Config");
-                        if (configProperty != null)
-                        {
-                            var config = configProperty.GetValue(plugin);
-                            if (config is BubbleChat.Config bubbleChatConfig)
-                            {
-                                return bubbleChatConfig;
-                            }
-                        }
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                Log.Error($"GetBubbleChatConfig error: {ex}");
-            }
-
-            return null;
         }
     }
 }
