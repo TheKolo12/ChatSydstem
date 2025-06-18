@@ -9,7 +9,7 @@ namespace ChatSystem
         public bool IsEnabled { get; set; } = true;
 
         [Description("Debug mode - shows additional information in console")]
-        public bool Debug { get; set; } = true;
+        public bool Debug { get; set; } = false;
 
         [Description("Chat range in meters - how far players can hear the chat")]
         public float ChatRange { get; set; } = 15f;
