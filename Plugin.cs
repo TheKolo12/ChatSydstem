@@ -10,7 +10,7 @@ namespace ChatSystem
     {
         public override string Author => "TheKolo12";
         public override string Name => "ChatSystem";
-        public override Version Version => new Version(1, 0, 1);
+        public override Version Version => new Version(1, 5, 0);
         public override string Prefix => "ChatSystem";
 
         public static ChatSystem Instance { get; private set; }

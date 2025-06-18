@@ -10,6 +10,7 @@ using Mirror;
 using AdminToys;
 using System.Reflection;
 using ChatSystem;
+using ChatSydstem;
 
 namespace ChatSystem
 {
@@ -33,52 +34,55 @@ namespace ChatSystem
             {
                 Player player = GetPlayerFromSender(sender);
 
-                if (player == null)
+                // Player Case
+                switch (true)
                 {
-                    response = "Player not found!";
-                    return false;
-                }
+                    // When player == null
+                    case var _ when player is null:
+                        response = "Player not found!";
+                        return false;
+                    
+                    // When player isn't alive
+                    case var _ when !player.IsAlive:
+                        response = "You can only use this command while alive!";
+                        return false;
 
-                if (!player.IsAlive)
-                {
-                    response = "You can only use this command while alive!";
-                    return false;
-                }
-
-                if (player.IsMuted)
-                {
-                    response = "You cant use this command, you are muted!";
-                    return false;
+                    // When player is muted
+                    case var _ when player.IsMuted:
+                        response = "You can't use this command, you are muted!";
+                        return false;
                 }
 
                 int maxLength = ChatSystem.Instance.Config.MaxMessageLength;
+                string message = string.Join(" ", arguments).Trim();
 
-                if (arguments.Count == 0)
+                switch (true)
                 {
-                    response = $"💬 Usage: chat <message> | Maximum {maxLength} characters allowed";
-                    return true;
+                    // When arguments is 0
+                    case var _ when arguments.Count == 0:
+                        response = $"💬 Usage: chat <message> | Maximum {maxLength} characters allowed";
+                        return true;
+
+                    // When the text is empy
+                    case var _ when string.IsNullOrWhiteSpace(message):
+                        response = "Message cannot be empty!";
+                        return false;
+
+                    // When the text is so longer
+                    case var _ when message.Length > maxLength:
+                        response = $"❌ Your message is too long! (Max: {maxLength} characters, Yours: {message.Length} characters)";
+                        return false;
                 }
 
-                string message = string.Join(" ", arguments);
-
-                if (string.IsNullOrEmpty(message.Trim()))
-                {
-                    response = "Message cannot be empty!";
-                    return false;
-                }
-
-                if (message.Length > maxLength)
-                {
-                    response = $"❌ Your message is too long! (Max: {maxLength} characters, Yours: {message.Length} characters)";
-                    return false;
-                }
 
                 CleanupPreviousMessages(player);
                 int sentCount = ProcessProximityChat(player, message);
 
                 response = $"💬 Your message '{message}' was sent to {sentCount} players! ({message.Length}/{maxLength} characters)";
+                ChatLogger.LogMessage(player, message);
                 return true;
             }
+
             catch (Exception ex)
             {
                 Log.Error($"ChatCommand error: {ex}");
@@ -92,14 +96,12 @@ namespace ChatSystem
         {
             try
             {
-                if (sender is PlayerCommandSender playerSender && playerSender.ReferenceHub != null)
-                {
+                if (sender is PlayerCommandSender { ReferenceHub: not null } playerSender)
                     return Player.Get(playerSender.ReferenceHub);
-                }
             }
             catch (Exception ex)
             {
-                Log.Error($"GetPlayerFromSender error: {ex}");
+                Log.Error($"Failed to get player from sender: {ex}");
             }
 
             return null;
@@ -109,31 +111,28 @@ namespace ChatSystem
         {
             try
             {
-                if (activeTexts.ContainsKey(sender))
+                if (activeTexts.TryGetValue(sender, out var textDisplay))
                 {
-                    if (activeTexts[sender] != null)
+                    if (textDisplay != null)
                     {
-                        NetworkServer.UnSpawn(activeTexts[sender].gameObject);
-                        NetworkServer.Destroy(activeTexts[sender].gameObject);
+                        NetworkServer.UnSpawn(textDisplay.gameObject);
+                        NetworkServer.Destroy(textDisplay.gameObject);
                     }
                     activeTexts.Remove(sender);
                 }
 
-                if (activeMessages.ContainsKey(sender))
-                    activeMessages.Remove(sender);
+                activeMessages.Remove(sender);
+                messageColors.Remove(sender);
 
-                if (messageColors.ContainsKey(sender))
-                    messageColors.Remove(sender);
-
-                if (trackingCoroutines.ContainsKey(sender))
+                if (trackingCoroutines.TryGetValue(sender, out var coroutine))
                 {
-                    Timing.KillCoroutines(trackingCoroutines[sender]);
+                    Timing.KillCoroutines(coroutine);
                     trackingCoroutines.Remove(sender);
                 }
             }
             catch (Exception ex)
             {
-                Log.Error($"CleanupPreviousMessages error: {ex}");
+                Log.Error($"[ChatSystem] CleanupPreviousMessages error: {ex}");
             }
         }
 
@@ -141,21 +140,18 @@ namespace ChatSystem
         {
             try
             {
-
                 string formattedMessage = string.Format(ChatSystem.Instance.Config.MessageFormat, message);
 
-                // Players within chat range
-                var nearbyPlayers = Player.List.Where(p =>
-                    p != null &&
-                    p.IsAlive &&
-                    Vector3.Distance(sender.Position, p.Position) <= ChatSystem.Instance.Config.ChatRange
-                ).ToList();
+                var players = Player.List.Where(p => p != null && p.IsAlive);
 
-                var textViewers = Player.List.Where(p =>
-                    p != null &&
-                    p.IsAlive &&
-                    Vector3.Distance(sender.Position, p.Position) <= ChatSystem.Instance.Config.TextVisibilityRange
-                ).ToList();
+                var nearbyPlayers = players
+                    .Where(p => Vector3.Distance(sender.Position, p.Position) <= ChatSystem.Instance.Config.ChatRange)
+                    .ToList();
+
+                var textViewers = players
+                    .Where(p => Vector3.Distance(sender.Position, p.Position) <= ChatSystem.Instance.Config.TextVisibilityRange)
+                    .ToList();
+
 
                 Create3DTextDisplay(sender, formattedMessage, textViewers, ChatSystem.Instance.Config.MessageColor, ChatSystem.Instance.Config.MessageDuration);
 
@@ -421,66 +417,41 @@ namespace ChatSystem
                 return null;
             }
         }
-
         private void SetTextToyProperties(AdminToyBase adminToyBase, string formattedText, string rawMessage, float size)
         {
             try
             {
                 var type = adminToyBase.GetType();
 
-                var argumentsField = type.GetField("Arguments", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-                if (argumentsField != null)
-                {
-                    var syncList = argumentsField.GetValue(adminToyBase);
-                    if (syncList != null)
-                    {
-                        var clearMethod = syncList.GetType().GetMethod("Clear");
-                        var addMethod = syncList.GetType().GetMethod("Add");
+                // Set Arguments (Clear + Add)
+                var argumentsField = type.GetField("Arguments", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
+                var syncList = argumentsField?.GetValue(adminToyBase);
+                syncList?.GetType().GetMethod("Clear")?.Invoke(syncList, null);
+                syncList?.GetType().GetMethod("Add")?.Invoke(syncList, new object[] { formattedText });
 
-                        if (clearMethod != null && addMethod != null)
-                        {
-                            clearMethod.Invoke(syncList, null);
-                            addMethod.Invoke(syncList, new object[] { formattedText });
-                        }
-                    }
-                }
+                // Set text format (field + properties)
+                type.GetField("_textFormat", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public)
+                    ?.SetValue(adminToyBase, formattedText);
 
-                var textFormatField = type.GetField("_textFormat", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-                if (textFormatField != null)
-                {
-                    textFormatField.SetValue(adminToyBase, formattedText);
-                }
+                type.GetProperty("TextFormat", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public)
+                    ?.SetValue(adminToyBase, formattedText, null);
 
-                var textFormatProperty = type.GetProperty("TextFormat", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-                if (textFormatProperty != null && textFormatProperty.CanWrite)
-                {
-                    textFormatProperty.SetValue(adminToyBase, formattedText);
-                }
+                type.GetProperty("Network_textFormat", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public)
+                    ?.SetValue(adminToyBase, formattedText, null);
 
-                var networkTextFormatProperty = type.GetProperty("Network_textFormat", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-                if (networkTextFormatProperty != null && networkTextFormatProperty.CanWrite)
-                {
-                    networkTextFormatProperty.SetValue(adminToyBase, formattedText);
-                }
+                // Set display size
+                type.GetField("_displaySize", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public)
+                    ?.SetValue(adminToyBase, new Vector2(70 * size, 15 * size));
 
-                var displaySizeField = type.GetField("_displaySize", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-                if (displaySizeField != null)
-                {
-                    Vector2 newSize = new Vector2(70 * size, 15 * size);
-                    displaySizeField.SetValue(adminToyBase, newSize);
-                }
-
-                var scaleField = type.GetField("Scale", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-                if (scaleField != null)
-                {
-                    Vector3 newScale = Vector3.one * size;
-                    scaleField.SetValue(adminToyBase, newScale);
-                }
+                // Set scale
+                type.GetField("Scale", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public)
+                    ?.SetValue(adminToyBase, Vector3.one * size);
             }
             catch (Exception ex)
             {
                 Log.Error($"SetTextToyProperties error: {ex}");
             }
         }
+
     }
 }

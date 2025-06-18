@@ -1,0 +1,51 @@
+# Build results
+bin/
+obj/
+
+# User-specific files
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Mono Auto Generated Files
+mono_crash.*
+
+# Visual Studio files
+.vscode/
+.vs/
+*.code-workspace
+
+# Backup & temp files
+*.tmp
+*.bak
+*.swp
+*.log
+
+# NuGet
+*.nupkg
+# NuGet Packages folder
+packages/
+# Project lock files
+project.lock.json
+project.assets.json
+# NuGet v3
+*.snupkg
+
+# Rider IDE
+.idea/
+
+# EXILED configs or plugin output
+/EXILED/Configs/
+/EXILED/Plugins/
+/EXILED/Logs/
+
+# Plugin-specific folders (adjust as needed)
+ChatSystem/TextLog/
+
+# Environment files
+.env
+
+# System files
+Thumbs.db
+Desktop.ini
